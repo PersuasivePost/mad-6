@@ -7,30 +7,12 @@ import {
   TouchableOpacity,
 } from "react-native";
 import EventCard from "../components/EventCard";
-
-const events = [
-  {
-    id: "1",
-    title: "Community Meetup",
-    date: "Mar 12, 2026",
-    location: "Town Hall",
-  },
-  {
-    id: "2",
-    title: "Workshop: RN Basics",
-    date: "Apr 2, 2026",
-    location: "Tech Center",
-  },
-  {
-    id: "3",
-    title: "Music Night",
-    date: "May 20, 2026",
-    location: "Central Park",
-  },
-];
+import { useAppSelector } from "../redux/hooks";
 
 const HomeScreen: React.FC<any> = ({ navigation }) => {
   const [studentName, setStudentName] = useState("");
+  // Redux: Get events from Redux store
+  const events = useAppSelector((state) => state.events.events);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
