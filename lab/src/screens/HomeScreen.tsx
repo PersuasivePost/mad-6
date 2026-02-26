@@ -1,13 +1,12 @@
 import React, { useState } from "react";
 import {
-  View,
-  Text,
-  Image,
-  StyleSheet,
-  TextInput,
   ScrollView,
+  Text,
+  TextInput,
+  StyleSheet,
+  TouchableOpacity,
 } from "react-native";
-import EventCard from "./EventCard";
+import EventCard from "../components/EventCard";
 
 const events = [
   {
@@ -30,15 +29,14 @@ const events = [
   },
 ];
 
-const HomeScreen: React.FC = () => {
-  const [studentName, setStudentName] = useState<string>("");
+const HomeScreen: React.FC<any> = ({ navigation }) => {
+  const [studentName, setStudentName] = useState("");
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.welcome}>
         Welcome {studentName ? studentName : "student"}
       </Text>
-
       <TextInput
         placeholder="Enter your name"
         value={studentName}
@@ -47,61 +45,26 @@ const HomeScreen: React.FC = () => {
       />
 
       {events.map((e) => (
-        <EventCard
+        <TouchableOpacity
           key={e.id}
-          title={e.title}
-          date={e.date}
-          location={e.location}
-        />
+          onPress={() => navigation.navigate("EventDetails", e)}
+        >
+          <EventCard title={e.title} date={e.date} location={e.location} />
+        </TouchableOpacity>
       ))}
     </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 16,
-    backgroundColor: "#ffffff",
-    justifyContent: "flex-start",
-  },
-  welcome: {
-    fontSize: 18,
-    fontWeight: "600",
-    marginBottom: 12,
-  },
+  container: { padding: 16, backgroundColor: "#fff" },
+  welcome: { fontSize: 18, fontWeight: "600", marginBottom: 12 },
   input: {
     borderWidth: 1,
     borderColor: "#ccc",
     padding: 8,
     borderRadius: 6,
     marginBottom: 12,
-  },
-  card: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    marginBottom: 12,
-    borderRadius: 8,
-    backgroundColor: "#f7f7f8",
-  },
-  image: {
-    width: 48,
-    height: 48,
-    marginRight: 12,
-    borderRadius: 6,
-    resizeMode: "cover",
-  },
-  cardContent: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 4,
-  },
-  meta: {
-    fontSize: 14,
-    color: "#666666",
   },
 });
 
