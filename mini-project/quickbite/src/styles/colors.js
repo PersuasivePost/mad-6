@@ -1,0 +1,17 @@
+export default {
+  primary: "#FF6B35",
+  primaryDark: "#E85A2C",
+  secondary: "#4ECDC4",
+  success: "#4CAF50",
+  error: "#F44336",
+  warning: "#FFC107",
+  white: "#FFFFFF",
+  black: "#1A1A1A",
+  gray1: "#333333",
+  gray2: "#666666",
+  gray3: "#999999",
+  gray4: "#CCCCCC",
+  gray5: "#E5E5E5",
+  veg: "#0F9D58",
+  nonveg: "#DB4437",
+};
