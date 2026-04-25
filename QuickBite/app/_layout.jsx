@@ -29,7 +29,7 @@ SplashScreen.preventAutoHideAsync();
 async function fetchProfileWithVendor(userId) {
   const { data, error } = await supabase
     .from('profiles')
-    .select('*, vendor:vendors(name)')
+    .select('*, vendor:vendors!vendor_id(name)')
     .eq('id', userId)
     .single();
 

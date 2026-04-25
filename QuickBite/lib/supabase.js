@@ -144,7 +144,7 @@ export async function fetchStudentOrders(studentId) {
     .from('orders')
     .select(`
       *,
-      vendor:vendors(name, image_url),
+      vendor:vendors!vendor_id(name, image_url),
       order_items(
         *,
         menu_item:menu_items(name, image_url)

@@ -65,7 +65,7 @@ export default function OrderTrackingScreen() {
         .from('orders')
         .select(`
           *,
-          vendor:vendors(name, location, image_url),
+          vendor:vendors!vendor_id(name, location, image_url),
           order_items(
             quantity,
             price,
