@@ -1,8 +1,8 @@
 /**
  * Employee Order Queue Screen
- * Matches Figma: stall selector, stats cards, order tabs, order cards with actions
+ * Real-time: polls every 15s, status update buttons (Accept, Preparing, Ready)
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -16,12 +16,12 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchVendorOrders, updateOrderStatus, fetchVendors } from '../../lib/supabase';
 import useStore from '../../lib/store';
-import OrderCard from '../../components/OrderCard';
 import { colors } from '../../lib/theme';
 
-const ORDER_TABS = ['New', 'Preparing', 'Ready', 'Done'];
+const ORDER_TABS = ['New', 'Confirmed', 'Preparing', 'Ready', 'Done'];
 const STATUS_MAP = {
   New: 'pending',
+  Confirmed: 'confirmed',
   Preparing: 'preparing',
   Ready: 'ready',
   Done: 'picked_up',
@@ -34,19 +34,26 @@ export default function EmployeeQueueScreen() {
   const [vendors, setVendors] = useState([]);
   const [selectedVendor, setSelectedVendor] = useState(null);
   const [orders, setOrders] = useState([]);
+  const [allOrders, setAllOrders] = useState([]);
   const [selectedTab, setSelectedTab] = useState('New');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showVendorPicker, setShowVendorPicker] = useState(false);
+  const pollRef = useRef(null);
 
   useEffect(() => {
     loadVendors();
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
   useEffect(() => {
     if (selectedVendor) {
       loadOrders();
+      // Auto-poll every 15 seconds
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(loadOrders, 15000);
     }
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [selectedVendor, selectedTab]);
 
   const loadVendors = async () => {
@@ -62,6 +69,9 @@ export default function EmployeeQueueScreen() {
     if (!selectedVendor) return;
     const data = await fetchVendorOrders(selectedVendor.id, STATUS_MAP[selectedTab]);
     setOrders(data);
+    // Also fetch all active orders for stats
+    const allActive = await fetchVendorOrders(selectedVendor.id);
+    setAllOrders(allActive);
   };
 
   const onRefresh = useCallback(async () => {
@@ -70,11 +80,13 @@ export default function EmployeeQueueScreen() {
     setRefreshing(false);
   }, [selectedVendor, selectedTab]);
 
-  const handleAccept = async (orderId) => {
-    const updated = await updateOrderStatus(orderId, 'confirmed');
+  const handleStatusUpdate = async (orderId, newStatus, label) => {
+    const updated = await updateOrderStatus(orderId, newStatus);
     if (updated) {
       loadOrders();
-      Alert.alert('Order Accepted', 'Order has been confirmed.');
+      Alert.alert('Updated', `Order marked as ${label}.`);
+    } else {
+      Alert.alert('Error', 'Failed to update order status.');
     }
   };
 
@@ -92,9 +104,10 @@ export default function EmployeeQueueScreen() {
     ]);
   };
 
-  const pendingCount = orders.filter((o) => o.status === 'pending').length;
-  const doneCount = 45; // Mock
-  const avgTime = '~14m'; // Mock
+  // Real stats from orders
+  const pendingCount = allOrders.filter((o) => o.status === 'pending').length;
+  const preparingCount = allOrders.filter((o) => o.status === 'preparing' || o.status === 'confirmed').length;
+  const doneCount = allOrders.filter((o) => o.status === 'picked_up').length;
 
   if (loading) {
     return (
@@ -103,6 +116,145 @@ export default function EmployeeQueueScreen() {
       </View>
     );
   }
+
+  const renderOrderCard = ({ item: order }) => {
+    const timeAgo = getTimeAgo(order.created_at);
+    const statusColor = colors.primary;
+
+    // Determine which action buttons to show based on order status
+    const renderActions = () => {
+      switch (order.status) {
+        case 'pending':
+          return (
+            <View className="flex-row mt-3 pt-3 border-t border-border-light" style={{ gap: 8 }}>
+              <TouchableOpacity
+                className="flex-1 flex-row items-center justify-center py-2.5 rounded-md border border-error"
+                onPress={() => handleReject(order.id)}
+              >
+                <Ionicons name="close" size={16} color={colors.error} />
+                <Text className="text-error text-sm ml-1" style={{ fontFamily: 'Inter_600SemiBold' }}>
+                  REJECT
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="flex-1 flex-row items-center justify-center py-2.5 rounded-md bg-success"
+                onPress={() => handleStatusUpdate(order.id, 'confirmed', 'Confirmed')}
+              >
+                <Ionicons name="checkmark" size={16} color="#fff" />
+                <Text className="text-white text-sm ml-1" style={{ fontFamily: 'Inter_600SemiBold' }}>
+                  ACCEPT
+                </Text>
+              </TouchableOpacity>
+            </View>
+          );
+        case 'confirmed':
+          return (
+            <View className="mt-3 pt-3 border-t border-border-light">
+              <TouchableOpacity
+                className="flex-row items-center justify-center py-2.5 rounded-md bg-primary"
+                onPress={() => handleStatusUpdate(order.id, 'preparing', 'Preparing')}
+              >
+                <Ionicons name="flame" size={16} color="#fff" />
+                <Text className="text-white text-sm ml-1" style={{ fontFamily: 'Inter_600SemiBold' }}>
+                  START PREPARING
+                </Text>
+              </TouchableOpacity>
+            </View>
+          );
+        case 'preparing':
+          return (
+            <View className="mt-3 pt-3 border-t border-border-light">
+              <TouchableOpacity
+                className="flex-row items-center justify-center py-2.5 rounded-md bg-success"
+                onPress={() => handleStatusUpdate(order.id, 'ready', 'Ready for Pickup')}
+              >
+                <Ionicons name="bag-check" size={16} color="#fff" />
+                <Text className="text-white text-sm ml-1" style={{ fontFamily: 'Inter_600SemiBold' }}>
+                  MARK READY
+                </Text>
+              </TouchableOpacity>
+            </View>
+          );
+        case 'ready':
+          return (
+            <View className="mt-3 pt-3 border-t border-border-light">
+              <TouchableOpacity
+                className="flex-row items-center justify-center py-2.5 rounded-md bg-primary"
+                onPress={() => handleStatusUpdate(order.id, 'picked_up', 'Picked Up')}
+              >
+                <Ionicons name="checkmark-done-circle" size={16} color="#fff" />
+                <Text className="text-white text-sm ml-1" style={{ fontFamily: 'Inter_600SemiBold' }}>
+                  MARK PICKED UP
+                </Text>
+              </TouchableOpacity>
+            </View>
+          );
+        default:
+          return null;
+      }
+    };
+
+    return (
+      <View
+        className="bg-white rounded-lg p-4 mb-3"
+        style={{
+          marginHorizontal: 16,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.06,
+          shadowRadius: 6,
+          elevation: 2,
+        }}
+      >
+        {/* Header */}
+        <View className="flex-row items-center justify-between mb-2">
+          <View className="flex-row items-center">
+            <Text className="text-lg text-text-primary mr-3" style={{ fontFamily: 'Inter_700Bold' }}>
+              TOKEN {order.pickup_token || '#--'}
+            </Text>
+            <View className="bg-primary-light px-2 py-1 rounded-md">
+              <Text className="text-xs text-primary uppercase" style={{ fontFamily: 'Inter_600SemiBold' }}>
+                {order.payment_method === 'wallet' ? 'PREPAID' : order.payment_method?.toUpperCase() || 'COD'}
+              </Text>
+            </View>
+          </View>
+          <Text className="text-sm text-primary" style={{ fontFamily: 'Inter_700Bold' }}>
+            ₹{Number(order.total).toFixed(0)}
+          </Text>
+        </View>
+
+        {/* Customer + Time */}
+        <Text className="text-xs text-text-tertiary mb-2" style={{ fontFamily: 'Inter_400Regular' }}>
+          {order.student?.name || 'Student'} • {timeAgo}
+        </Text>
+
+        {/* Items */}
+        {order.order_items?.map((oi, idx) => (
+          <View key={idx} className="flex-row items-center mb-1">
+            <Text className="text-xs text-text-tertiary w-5" style={{ fontFamily: 'Inter_500Medium' }}>
+              {oi.quantity}
+            </Text>
+            <Text className="text-sm text-text-primary flex-1" style={{ fontFamily: 'Inter_400Regular' }} numberOfLines={1}>
+              {oi.menu_item?.name || 'Item'}
+            </Text>
+          </View>
+        ))}
+
+        {/* Special Instructions */}
+        {order.special_instructions && (
+          <View className="bg-warning-light rounded-md p-2 mt-2 flex-row items-start">
+            <Ionicons name="information-circle" size={16} color={colors.warning} style={{ marginTop: 1 }} />
+            <Text className="text-xs text-text-secondary ml-2 flex-1" style={{ fontFamily: 'Inter_400Regular' }}>
+              {order.special_instructions}
+            </Text>
+          </View>
+        )}
+
+        {/* Action buttons */}
+        {renderActions()}
+      </View>
+    );
+  };
 
   return (
     <View className="flex-1 bg-surface-alt">
@@ -162,7 +314,7 @@ export default function EmployeeQueueScreen() {
           </View>
         )}
 
-        {/* Stats Cards */}
+        {/* Stats Cards — real data */}
         <View className="flex-row" style={{ gap: 8 }}>
           <View className="flex-1 bg-warning-light rounded-lg p-3 items-center">
             <Text className="text-xs text-warning uppercase" style={{ fontFamily: 'Inter_600SemiBold' }}>
@@ -170,6 +322,14 @@ export default function EmployeeQueueScreen() {
             </Text>
             <Text className="text-2xl text-text-primary" style={{ fontFamily: 'Inter_700Bold' }}>
               {pendingCount}
+            </Text>
+          </View>
+          <View className="flex-1 bg-primary-light rounded-lg p-3 items-center">
+            <Text className="text-xs text-primary uppercase" style={{ fontFamily: 'Inter_600SemiBold' }}>
+              In Progress
+            </Text>
+            <Text className="text-2xl text-text-primary" style={{ fontFamily: 'Inter_700Bold' }}>
+              {preparingCount}
             </Text>
           </View>
           <View className="flex-1 bg-success-light rounded-lg p-3 items-center">
@@ -180,28 +340,22 @@ export default function EmployeeQueueScreen() {
               {doneCount}
             </Text>
           </View>
-          <View className="flex-1 bg-info-light rounded-lg p-3 items-center">
-            <Text className="text-xs text-info uppercase" style={{ fontFamily: 'Inter_600SemiBold' }}>
-              Avg Time
-            </Text>
-            <Text className="text-2xl text-text-primary" style={{ fontFamily: 'Inter_700Bold' }}>
-              {avgTime}
-            </Text>
-          </View>
         </View>
       </View>
 
       {/* Order Tabs */}
-      <View className="flex-row px-5 py-3 bg-white border-b border-border-light">
-        {ORDER_TABS.map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            className={`mr-4 pb-2 ${
-              selectedTab === tab ? 'border-b-2 border-primary' : ''
-            }`}
-            onPress={() => setSelectedTab(tab)}
-          >
-            <View className="flex-row items-center">
+      <View className="px-5 py-3 bg-white border-b border-border-light">
+        <FlatList
+          horizontal
+          data={ORDER_TABS}
+          keyExtractor={(item) => item}
+          renderItem={({ item: tab }) => (
+            <TouchableOpacity
+              className={`mr-4 pb-2 ${
+                selectedTab === tab ? 'border-b-2 border-primary' : ''
+              }`}
+              onPress={() => setSelectedTab(tab)}
+            >
               <Text
                 className={`text-sm ${
                   selectedTab === tab ? 'text-primary' : 'text-text-tertiary'
@@ -212,31 +366,17 @@ export default function EmployeeQueueScreen() {
               >
                 {tab}
               </Text>
-              {tab === 'New' && pendingCount > 0 && (
-                <View className="bg-primary rounded-full w-5 h-5 items-center justify-center ml-1">
-                  <Text className="text-white text-xs" style={{ fontFamily: 'Inter_700Bold' }}>
-                    {pendingCount}
-                  </Text>
-                </View>
-              )}
-            </View>
-          </TouchableOpacity>
-        ))}
+            </TouchableOpacity>
+          )}
+          showsHorizontalScrollIndicator={false}
+        />
       </View>
 
       {/* Orders List */}
       <FlatList
         data={orders}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <OrderCard
-            order={item}
-            variant="employee"
-            onAccept={() => handleAccept(item.id)}
-            onReject={() => handleReject(item.id)}
-            style={{ marginHorizontal: 16 }}
-          />
-        )}
+        renderItem={renderOrderCard}
         contentContainerStyle={{ paddingTop: 12, paddingBottom: 20 }}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -253,4 +393,22 @@ export default function EmployeeQueueScreen() {
       />
     </View>
   );
+}
+
+/** Helper to format time ago */
+function getTimeAgo(dateString) {
+  if (!dateString) return 'just now';
+  const now = new Date();
+  const date = new Date(dateString);
+  const diffMs = now - date;
+  const diffMins = Math.floor(diffMs / 60000);
+
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return `${diffMins} mins ago`;
+
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
 }

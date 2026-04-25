@@ -1,7 +1,6 @@
 /**
  * Student Home Dashboard
- * Matches Figma: Header with greeting + wallet, search bar,
- * category pills, popular stalls carousel, recommended items grid
+ * Dynamic data: vendors, categories, wallet balance all from Supabase
  */
 import { useState, useEffect, useCallback } from 'react';
 import {
@@ -20,9 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { fetchVendors, fetchMenuItems, fetchProfile } from '../../lib/supabase';
 import useStore from '../../lib/store';
 import VendorCard from '../../components/VendorCard';
-import { colors } from '../../lib/theme';
-
-const CATEGORIES = ['Recommended', 'Breakfast', 'Lunch', 'Snacks', 'Drinks'];
+import { colors, APP_CONSTANTS } from '../../lib/theme';
 
 export default function StudentHomeScreen() {
   const router = useRouter();
@@ -36,7 +33,8 @@ export default function StudentHomeScreen() {
 
   const [vendors, setVendors] = useState([]);
   const [popularItems, setPopularItems] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState('Recommended');
+  const [categories, setCategories] = useState(['All']);
+  const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -65,6 +63,10 @@ export default function StudentHomeScreen() {
           );
         }
         setPopularItems(allItems);
+
+        // Extract unique categories from items
+        const uniqueCats = [...new Set(allItems.map((i) => i.category).filter(Boolean))];
+        setCategories(['All', ...uniqueCats]);
       }
     } catch (err) {
       console.error('Error loading data:', err);
@@ -84,6 +86,21 @@ export default function StudentHomeScreen() {
   }, [loadData]);
 
   const firstName = profile?.name?.split(' ')[0] || 'Student';
+
+  // Filter items by selected category
+  const filteredItems =
+    selectedCategory === 'All'
+      ? popularItems
+      : popularItems.filter(
+          (item) => item.category === selectedCategory
+        );
+
+  // Filter items by search query
+  const searchedItems = searchQuery.trim()
+    ? filteredItems.filter((item) =>
+        item.name.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : filteredItems;
 
   if (loading) {
     return (
@@ -143,7 +160,7 @@ export default function StudentHomeScreen() {
             className="text-sm text-text-secondary mb-4"
             style={{ fontFamily: 'Inter_400Regular' }}
           >
-            MIT College, Pune
+            {APP_CONSTANTS.collegeName}
           </Text>
 
           {/* Wallet & Active Order Cards */}
@@ -203,18 +220,20 @@ export default function StudentHomeScreen() {
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
-            <TouchableOpacity>
-              <Ionicons name="options-outline" size={20} color={colors.textTertiary} />
-            </TouchableOpacity>
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <Ionicons name="close-circle" size={20} color={colors.textTertiary} />
+              </TouchableOpacity>
+            )}
           </View>
 
-          {/* Category Pills */}
+          {/* Category Pills — dynamic from DB */}
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ gap: 8 }}
           >
-            {CATEGORIES.map((cat) => (
+            {categories.map((cat) => (
               <TouchableOpacity
                 key={cat}
                 className={`px-4 py-2 rounded-full border ${
@@ -273,25 +292,25 @@ export default function StudentHomeScreen() {
           />
         </View>
 
-        {/* Recommended For You */}
+        {/* Recommended For You — filtered by category */}
         <View className="mt-6 px-5 pb-6">
           <Text
             className="text-lg text-text-primary mb-3"
             style={{ fontFamily: 'Inter_700Bold' }}
           >
-            Recommended for You
+            {selectedCategory === 'All' ? 'All Items' : selectedCategory}
           </Text>
 
-          {popularItems.length === 0 ? (
+          {searchedItems.length === 0 ? (
             <View className="items-center py-8">
               <Ionicons name="restaurant-outline" size={48} color={colors.textTertiary} />
               <Text className="text-text-tertiary text-sm mt-3" style={{ fontFamily: 'Inter_400Regular' }}>
-                No items available yet
+                No items in this category
               </Text>
             </View>
           ) : (
             <View className="flex-row flex-wrap" style={{ gap: 12 }}>
-              {popularItems.slice(0, 6).map((item) => (
+              {searchedItems.map((item) => (
                 <TouchableOpacity
                   key={item.id}
                   className="bg-white rounded-lg overflow-hidden"
@@ -313,20 +332,24 @@ export default function StudentHomeScreen() {
                     className="w-full h-28"
                     resizeMode="cover"
                   />
-                  {/* Veg/Non-veg badge */}
+                  {/* Veg badge */}
                   <View
                     className="absolute top-2 left-2 w-4 h-4 rounded-sm border items-center justify-center bg-white"
-                    style={{
-                      borderColor: item.food_type === 'veg' ? colors.vegBadge : colors.nonVegBadge,
-                    }}
+                    style={{ borderColor: colors.vegBadge }}
                   >
                     <View
                       className="w-2 h-2 rounded-full"
-                      style={{
-                        backgroundColor: item.food_type === 'veg' ? colors.vegBadge : colors.nonVegBadge,
-                      }}
+                      style={{ backgroundColor: colors.vegBadge }}
                     />
                   </View>
+                  {/* Jain tag */}
+                  {item.dietary_tags?.includes('jain-available') && (
+                    <View className="absolute top-2 right-2 bg-white/90 px-1.5 py-0.5 rounded">
+                      <Text className="text-xs text-success" style={{ fontFamily: 'Inter_600SemiBold' }}>
+                        Jain
+                      </Text>
+                    </View>
+                  )}
                   <View className="p-3">
                     <Text
                       className="text-sm text-text-primary"

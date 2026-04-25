@@ -4,6 +4,13 @@
  * @see https://www.figma.com/design/zmaKZQdE00vWji2dzNU3iD/
  */
 
+/** App-wide constants */
+export const APP_CONSTANTS = {
+  collegeName: 'KJSCE, Mumbai',
+  collegeFullName: 'K J Somaiya College of Engineering, Mumbai',
+  canteenLocation: 'AryaBhat Building, Ground Floor (A Building), KJSCE, Mumbai',
+};
+
 export const colors = {
   // Primary
   primary: '#F58220',

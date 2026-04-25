@@ -365,13 +365,27 @@ CREATE TRIGGER update_orders_updated_at
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================
--- 8. SEED DATA (optional, for development)
+-- 9. SEED DATA — KJSCE Engineering Canteen
 -- ============================================
 
--- Sample vendors
--- INSERT INTO vendors (name, description, image_url, is_open, rating, location, cuisine_type) VALUES
--- ('South Kitchen', 'Authentic South Indian cuisine', 'https://picsum.photos/seed/vendor1/400/300', true, 4.5, 'Engineering Block A, Level 1', 'South Indian'),
--- ('Campus Canteen Central', 'Multi-cuisine campus canteen', 'https://picsum.photos/seed/vendor2/400/300', true, 4.3, 'Main Building, Ground Floor', 'Multi-Cuisine'),
--- ('Amul Parlour', 'Ice creams, shakes and snacks', 'https://picsum.photos/seed/vendor3/400/300', true, 4.6, 'Student Hub', 'Ice Cream & Beverages'),
--- ('Nescafe Corner', 'Hot beverages and quick bites', 'https://picsum.photos/seed/vendor4/400/300', true, 4.2, 'Library Building', 'Beverages'),
--- ('Green Garden', 'Fresh salads and healthy food', 'https://picsum.photos/seed/vendor5/400/300', true, 4.2, 'Sports Complex', 'Healthy');
+-- If vendor already exists, update it:
+-- UPDATE vendors SET 
+--   name = 'KJSCE Engineering Canteen',
+--   location = 'AryaBhat Building, Ground Floor (A Building), KJSCE, Mumbai',
+--   description = 'Pure Veg & Jain friendly canteen at KJSCE, Mumbai'
+-- WHERE id = 'aaaaaaaa-0000-0000-0000-000000000001';
+
+-- Or insert fresh:
+-- INSERT INTO vendors (id, name, description, cuisine_type, is_open, rating, location, image_url)
+-- VALUES (
+--   'aaaaaaaa-0000-0000-0000-000000000001',
+--   'KJSCE Engineering Canteen',
+--   'Pure Veg & Jain friendly canteen at KJSCE, Mumbai',
+--   'Indian Vegetarian',
+--   true,
+--   4.3,
+--   'AryaBhat Building, Ground Floor (A Building), KJSCE, Mumbai',
+--   'https://picsum.photos/seed/kjscecanteen/400/200'
+-- );
+
+-- See docs/seed.sql for complete menu items (96 items across 6 categories)

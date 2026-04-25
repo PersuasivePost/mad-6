@@ -108,7 +108,7 @@ export default function OrderCard({
             className="text-sm text-text-secondary"
             style={{ fontFamily: 'Inter_400Regular' }}
           >
-            {orderItem.menu_item?.food_type === 'veg' ? 'Veg' : 'Non-Veg'}
+            ₹{orderItem.price}
           </Text>
         </View>
       ))}

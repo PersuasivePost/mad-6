@@ -30,23 +30,24 @@ export default function MenuItemCard({
     >
       {/* Info */}
       <View className="flex-1 pr-3">
-        {/* Veg/Non-veg badge */}
+        {/* Veg badge — all items are veg */}
         <View className="flex-row items-center mb-1">
           <View
             className="w-4 h-4 border rounded-sm items-center justify-center mr-2"
-            style={{
-              borderColor:
-                item.food_type === 'veg' ? colors.vegBadge : colors.nonVegBadge,
-            }}
+            style={{ borderColor: colors.vegBadge }}
           >
             <View
               className="w-2 h-2 rounded-full"
-              style={{
-                backgroundColor:
-                  item.food_type === 'veg' ? colors.vegBadge : colors.nonVegBadge,
-              }}
+              style={{ backgroundColor: colors.vegBadge }}
             />
           </View>
+          {item.dietary_tags?.includes('jain-available') && (
+            <View className="bg-success/10 px-1.5 py-0.5 rounded mr-2">
+              <Text className="text-xs text-success" style={{ fontFamily: 'Inter_600SemiBold' }}>
+                Jain
+              </Text>
+            </View>
+          )}
           {item.is_available === false && (
             <Text
               className="text-xs text-error"

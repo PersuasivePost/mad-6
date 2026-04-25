@@ -41,7 +41,7 @@ export default function CheckoutScreen() {
   const gst = Math.round(subtotal * GST_RATE * 100) / 100;
   const total = subtotal + gst + PLATFORM_FEE - couponDiscount;
 
-  const walletBalance = profile?.wallet_balance || 450;
+  const walletBalance = Number(profile?.wallet_balance || 0);
   const canPayWithWallet = walletBalance >= total;
 
   const paymentMethods = [

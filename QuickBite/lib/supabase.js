@@ -66,6 +66,7 @@ export async function fetchVendors() {
   const { data, error } = await supabase
     .from('vendors')
     .select('*')
+    .eq('is_open', true)
     .order('rating', { ascending: false });
 
   if (error) {
@@ -85,6 +86,7 @@ export async function fetchMenuItems(vendorId) {
     .from('menu_items')
     .select('*')
     .eq('vendor_id', vendorId)
+    .eq('is_available', true)
     .order('category', { ascending: true });
 
   if (error) {

@@ -1,8 +1,8 @@
 /**
  * Vendor Menu Screen (Stall Detail)
- * Matches Figma: hero image, vendor info, category tabs, menu items list
+ * Dynamic data: vendor info, menu items, categories all from Supabase
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -19,8 +19,6 @@ import useStore from '../../../lib/store';
 import MenuItemCard from '../../../components/MenuItemCard';
 import { colors } from '../../../lib/theme';
 
-const CATEGORIES = ['Recommended', 'Breakfast', 'Lunch', 'Snacks', 'Drinks'];
-
 export default function VendorMenuScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
@@ -32,7 +30,8 @@ export default function VendorMenuScreen() {
 
   const [vendor, setVendor] = useState(null);
   const [menuItems, setMenuItems] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState('Recommended');
+  const [categories, setCategories] = useState(['All']);
+  const [selectedCategory, setSelectedCategory] = useState('All');
   const [loading, setLoading] = useState(true);
   const [isFavorite, setIsFavorite] = useState(false);
 
@@ -53,6 +52,10 @@ export default function VendorMenuScreen() {
       // Fetch menu items
       const items = await fetchMenuItems(id);
       setMenuItems(items);
+
+      // Extract unique categories from real data
+      const uniqueCats = [...new Set(items.map((i) => i.category).filter(Boolean))];
+      setCategories(['All', ...uniqueCats]);
     } catch (err) {
       console.error('Error loading vendor:', err);
     } finally {
@@ -61,11 +64,10 @@ export default function VendorMenuScreen() {
   };
 
   const filteredItems =
-    selectedCategory === 'Recommended'
+    selectedCategory === 'All'
       ? menuItems
       : menuItems.filter(
-          (item) =>
-            item.category?.toLowerCase() === selectedCategory.toLowerCase()
+          (item) => item.category === selectedCategory
         );
 
   const getItemQuantity = (itemId) => {
@@ -159,14 +161,14 @@ export default function VendorMenuScreen() {
         <View className="flex-row items-center mt-1 mb-1">
           <Ionicons name="star" size={14} color={colors.starRating} />
           <Text className="text-sm text-text-secondary ml-1" style={{ fontFamily: 'Inter_500Medium' }}>
-            {vendor?.rating || '4.5'}
+            {vendor?.rating || '--'}
           </Text>
           <Text className="text-text-tertiary mx-2">•</Text>
           <Text
-            className="text-sm text-text-secondary"
-            style={{ fontFamily: 'Inter_400Regular' }}
+            className={`text-sm ${vendor?.is_open ? 'text-success' : 'text-error'}`}
+            style={{ fontFamily: 'Inter_500Medium' }}
           >
-            Open Now
+            {vendor?.is_open ? 'Open Now' : 'Closed'}
           </Text>
         </View>
         <View className="flex-row items-center">
@@ -176,17 +178,14 @@ export default function VendorMenuScreen() {
           </Text>
         </View>
 
-        {/* Search */}
-        <View className="flex-row items-center bg-surface rounded-lg px-4 py-2.5 my-3">
-          <Ionicons name="search-outline" size={18} color={colors.textTertiary} />
-          <Text className="flex-1 ml-2 text-sm text-text-tertiary" style={{ fontFamily: 'Inter_400Regular' }}>
-            Search for dishes, snacks...
-          </Text>
-        </View>
+        {/* Category info */}
+        <Text className="text-xs text-text-tertiary mt-1" style={{ fontFamily: 'Inter_400Regular' }}>
+          {vendor?.cuisine_type || ''} • {menuItems.length} items available
+        </Text>
 
-        {/* Category Tabs */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-          {CATEGORIES.map((cat) => (
+        {/* Category Tabs — dynamic from DB */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginTop: 12, paddingBottom: 4 }}>
+          {categories.map((cat) => (
             <TouchableOpacity
               key={cat}
               className={`px-4 py-2 rounded-full ${
@@ -226,7 +225,7 @@ export default function VendorMenuScreen() {
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <Text className="text-lg text-text-primary pt-4 pb-2" style={{ fontFamily: 'Inter_700Bold' }}>
-            Popular Items
+            {selectedCategory === 'All' ? 'All Items' : selectedCategory}
           </Text>
         }
         ListEmptyComponent={
