@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS profiles (
   avatar_url TEXT,
   wallet_balance NUMERIC DEFAULT 0,
   phone TEXT,
+  vendor_id UUID REFERENCES vendors(id),
+  campus TEXT DEFAULT 'kjsce',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

@@ -1,6 +1,8 @@
 /**
  * Employee Order Queue Screen
- * Real-time: polls every 15s, status update buttons (Accept, Preparing, Ready)
+ * Filters orders by the staff's assigned canteen (vendorId from Zustand).
+ * Full order lifecycle: Accept → Preparing → Ready → Picked Up
+ * Auto-polls every 15 seconds.
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -14,7 +16,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { fetchVendorOrders, updateOrderStatus, fetchVendors } from '../../lib/supabase';
+import { supabase, fetchVendorOrders, updateOrderStatus } from '../../lib/supabase';
 import useStore from '../../lib/store';
 import { colors } from '../../lib/theme';
 
@@ -30,55 +32,47 @@ const STATUS_MAP = {
 export default function EmployeeQueueScreen() {
   const router = useRouter();
   const profile = useStore((s) => s.profile);
+  const vendorId = useStore((s) => s.vendorId);
+  const vendorName = useStore((s) => s.vendorName);
+  const clearAuth = useStore((s) => s.clearAuth);
 
-  const [vendors, setVendors] = useState([]);
-  const [selectedVendor, setSelectedVendor] = useState(null);
   const [orders, setOrders] = useState([]);
   const [allOrders, setAllOrders] = useState([]);
   const [selectedTab, setSelectedTab] = useState('New');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [showVendorPicker, setShowVendorPicker] = useState(false);
   const pollRef = useRef(null);
 
   useEffect(() => {
-    loadVendors();
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, []);
-
-  useEffect(() => {
-    if (selectedVendor) {
+    if (vendorId) {
       loadOrders();
-      // Auto-poll every 15 seconds
-      if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = setInterval(loadOrders, 15000);
+    } else {
+      setLoading(false);
     }
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [selectedVendor, selectedTab]);
-
-  const loadVendors = async () => {
-    const data = await fetchVendors();
-    setVendors(data);
-    if (data.length > 0) {
-      setSelectedVendor(data[0]);
-    }
-    setLoading(false);
-  };
+  }, [vendorId, selectedTab]);
 
   const loadOrders = async () => {
-    if (!selectedVendor) return;
-    const data = await fetchVendorOrders(selectedVendor.id, STATUS_MAP[selectedTab]);
-    setOrders(data);
-    // Also fetch all active orders for stats
-    const allActive = await fetchVendorOrders(selectedVendor.id);
-    setAllOrders(allActive);
+    if (!vendorId) return;
+    try {
+      const data = await fetchVendorOrders(vendorId, STATUS_MAP[selectedTab]);
+      setOrders(data);
+      // Fetch all active orders for stats
+      const allActive = await fetchVendorOrders(vendorId);
+      setAllOrders(allActive);
+    } catch (err) {
+      console.error('Error loading orders:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadOrders();
     setRefreshing(false);
-  }, [selectedVendor, selectedTab]);
+  }, [vendorId, selectedTab]);
 
   const handleStatusUpdate = async (orderId, newStatus, label) => {
     const updated = await updateOrderStatus(orderId, newStatus);
@@ -104,10 +98,48 @@ export default function EmployeeQueueScreen() {
     ]);
   };
 
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Are you sure you want to log out?', [
+      { text: 'Cancel' },
+      {
+        text: 'Logout',
+        style: 'destructive',
+        onPress: async () => {
+          await supabase.auth.signOut();
+          clearAuth();
+          router.replace('/(auth)/login');
+        },
+      },
+    ]);
+  };
+
   // Real stats from orders
   const pendingCount = allOrders.filter((o) => o.status === 'pending').length;
   const preparingCount = allOrders.filter((o) => o.status === 'preparing' || o.status === 'confirmed').length;
   const doneCount = allOrders.filter((o) => o.status === 'picked_up').length;
+
+  // No canteen assigned
+  if (!vendorId && !loading) {
+    return (
+      <View className="flex-1 bg-white items-center justify-center px-8">
+        <Ionicons name="alert-circle-outline" size={64} color={colors.warning} />
+        <Text className="text-lg text-text-primary text-center mt-4" style={{ fontFamily: 'Inter_700Bold' }}>
+          No Canteen Assigned
+        </Text>
+        <Text className="text-sm text-text-secondary text-center mt-2" style={{ fontFamily: 'Inter_400Regular' }}>
+          Your account is not assigned to any canteen. Please contact the admin to assign your canteen.
+        </Text>
+        <TouchableOpacity
+          className="bg-primary rounded-md py-3 px-8 mt-6"
+          onPress={handleLogout}
+        >
+          <Text className="text-white text-sm" style={{ fontFamily: 'Inter_600SemiBold' }}>
+            Logout
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   if (loading) {
     return (
@@ -119,9 +151,7 @@ export default function EmployeeQueueScreen() {
 
   const renderOrderCard = ({ item: order }) => {
     const timeAgo = getTimeAgo(order.created_at);
-    const statusColor = colors.primary;
 
-    // Determine which action buttons to show based on order status
     const renderActions = () => {
       switch (order.status) {
         case 'pending':
@@ -223,12 +253,10 @@ export default function EmployeeQueueScreen() {
           </Text>
         </View>
 
-        {/* Customer + Time */}
         <Text className="text-xs text-text-tertiary mb-2" style={{ fontFamily: 'Inter_400Regular' }}>
           {order.student?.name || 'Student'} • {timeAgo}
         </Text>
 
-        {/* Items */}
         {order.order_items?.map((oi, idx) => (
           <View key={idx} className="flex-row items-center mb-1">
             <Text className="text-xs text-text-tertiary w-5" style={{ fontFamily: 'Inter_500Medium' }}>
@@ -240,7 +268,6 @@ export default function EmployeeQueueScreen() {
           </View>
         ))}
 
-        {/* Special Instructions */}
         {order.special_instructions && (
           <View className="bg-warning-light rounded-md p-2 mt-2 flex-row items-start">
             <Ionicons name="information-circle" size={16} color={colors.warning} style={{ marginTop: 1 }} />
@@ -250,7 +277,6 @@ export default function EmployeeQueueScreen() {
           </View>
         )}
 
-        {/* Action buttons */}
         {renderActions()}
       </View>
     );
@@ -260,62 +286,27 @@ export default function EmployeeQueueScreen() {
     <View className="flex-1 bg-surface-alt">
       {/* Header */}
       <View className="bg-white px-5 pt-14 pb-4">
-        <View className="flex-row items-center justify-between mb-4">
-          <TouchableOpacity>
-            <Ionicons name="menu" size={24} color={colors.textPrimary} />
-          </TouchableOpacity>
-          <View className="flex-row items-center">
-            <Text className="text-xl text-text-primary" style={{ fontFamily: 'Inter_700Bold' }}>
-              QuickBite{' '}
+        <View className="flex-row items-center justify-between mb-2">
+          <View className="flex-1">
+            <Text className="text-xl text-text-primary" style={{ fontFamily: 'Inter_700Bold' }} numberOfLines={1}>
+              {vendorName || 'Canteen'}
             </Text>
-            <Text className="text-xl text-primary" style={{ fontFamily: 'Inter_700Bold' }}>
-              Staff
+            <Text className="text-xs text-text-tertiary mt-0.5" style={{ fontFamily: 'Inter_400Regular' }}>
+              Logged in as {profile?.name || 'Staff'}
             </Text>
           </View>
           <View className="flex-row items-center" style={{ gap: 12 }}>
             <TouchableOpacity>
               <Ionicons name="notifications-outline" size={22} color={colors.textPrimary} />
             </TouchableOpacity>
-            <TouchableOpacity>
-              <Ionicons name="person-circle-outline" size={24} color={colors.primary} />
+            <TouchableOpacity onPress={handleLogout}>
+              <Ionicons name="log-out-outline" size={22} color={colors.error} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Stall Selector */}
-        <TouchableOpacity
-          className="flex-row items-center justify-between border border-border rounded-lg px-4 py-3 mb-4"
-          onPress={() => setShowVendorPicker(!showVendorPicker)}
-        >
-          <Text className="text-base text-text-primary" style={{ fontFamily: 'Inter_500Medium' }}>
-            {selectedVendor?.name || 'Select Stall'}
-          </Text>
-          <Ionicons name="chevron-down" size={18} color={colors.textTertiary} />
-        </TouchableOpacity>
-
-        {showVendorPicker && (
-          <View className="border border-border rounded-lg mb-3 bg-white overflow-hidden">
-            {vendors.map((v) => (
-              <TouchableOpacity
-                key={v.id}
-                className={`px-4 py-3 border-b border-border-light ${
-                  selectedVendor?.id === v.id ? 'bg-primary-light' : ''
-                }`}
-                onPress={() => {
-                  setSelectedVendor(v);
-                  setShowVendorPicker(false);
-                }}
-              >
-                <Text className="text-sm text-text-primary" style={{ fontFamily: 'Inter_400Regular' }}>
-                  {v.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
         {/* Stats Cards — real data */}
-        <View className="flex-row" style={{ gap: 8 }}>
+        <View className="flex-row mt-3" style={{ gap: 8 }}>
           <View className="flex-1 bg-warning-light rounded-lg p-3 items-center">
             <Text className="text-xs text-warning uppercase" style={{ fontFamily: 'Inter_600SemiBold' }}>
               Pending
@@ -356,16 +347,25 @@ export default function EmployeeQueueScreen() {
               }`}
               onPress={() => setSelectedTab(tab)}
             >
-              <Text
-                className={`text-sm ${
-                  selectedTab === tab ? 'text-primary' : 'text-text-tertiary'
-                }`}
-                style={{
-                  fontFamily: selectedTab === tab ? 'Inter_600SemiBold' : 'Inter_500Medium',
-                }}
-              >
-                {tab}
-              </Text>
+              <View className="flex-row items-center">
+                <Text
+                  className={`text-sm ${
+                    selectedTab === tab ? 'text-primary' : 'text-text-tertiary'
+                  }`}
+                  style={{
+                    fontFamily: selectedTab === tab ? 'Inter_600SemiBold' : 'Inter_500Medium',
+                  }}
+                >
+                  {tab}
+                </Text>
+                {tab === 'New' && pendingCount > 0 && (
+                  <View className="bg-primary rounded-full w-5 h-5 items-center justify-center ml-1">
+                    <Text className="text-white text-xs" style={{ fontFamily: 'Inter_700Bold' }}>
+                      {pendingCount}
+                    </Text>
+                  </View>
+                )}
+              </View>
             </TouchableOpacity>
           )}
           showsHorizontalScrollIndicator={false}
@@ -395,20 +395,16 @@ export default function EmployeeQueueScreen() {
   );
 }
 
-/** Helper to format time ago */
 function getTimeAgo(dateString) {
   if (!dateString) return 'just now';
   const now = new Date();
   const date = new Date(dateString);
   const diffMs = now - date;
   const diffMins = Math.floor(diffMs / 60000);
-
   if (diffMins < 1) return 'just now';
   if (diffMins < 60) return `${diffMins} mins ago`;
-
   const diffHours = Math.floor(diffMins / 60);
   if (diffHours < 24) return `${diffHours}h ago`;
-
   const diffDays = Math.floor(diffHours / 24);
   return `${diffDays}d ago`;
 }

@@ -1,7 +1,8 @@
 /**
  * Registration Screen
- * Matches Figma: "Create Account" form with role toggle,
- * profile photo, name, email, phone, college, student ID, password.
+ * Role toggle: Student vs Canteen Staff
+ * Staff: campus selector, canteen selector, staff role (Employee/Manager)
+ * Student: student ID field
  */
 import { useState } from 'react';
 import {
@@ -20,26 +21,75 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { colors } from '../../lib/theme';
 
+/** Campus options */
+const CAMPUSES = [
+  { label: 'KJSCE, Mumbai', value: 'kjsce' },
+];
+
+/** Canteen options per campus */
+const CANTEENS_BY_CAMPUS = {
+  kjsce: [
+    {
+      label: 'KJSCE Engineering Canteen',
+      value: 'aaaaaaaa-0000-0000-0000-000000000001',
+    },
+  ],
+};
+
+/** Staff role options */
+const STAFF_ROLES = [
+  { label: 'Employee', value: 'employee' },
+  { label: 'Manager', value: 'manager' },
+];
+
 export default function RegisterScreen() {
   const router = useRouter();
 
-  const [role, setRole] = useState('student');
+  // Common fields
+  const [roleToggle, setRoleToggle] = useState('student'); // 'student' | 'staff'
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [college, setCollege] = useState('');
-  const [studentId, setStudentId] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Student-only fields
+  const [studentId, setStudentId] = useState('');
+
+  // Staff-only fields
+  const [selectedCampus, setSelectedCampus] = useState('');
+  const [selectedCanteen, setSelectedCanteen] = useState('');
+  const [staffRole, setStaffRole] = useState('employee');
+  const [showCampusPicker, setShowCampusPicker] = useState(false);
+  const [showCanteenPicker, setShowCanteenPicker] = useState(false);
+  const [showStaffRolePicker, setShowStaffRolePicker] = useState(false);
+
+  const isStaff = roleToggle === 'staff';
+
   const getPasswordStrength = () => {
     if (!password) return { label: '', color: colors.textTertiary, width: '0%' };
     if (password.length < 6) return { label: 'Weak', color: colors.error, width: '33%' };
     if (password.length < 10) return { label: 'Medium', color: colors.warning, width: '66%' };
     return { label: 'Strong', color: colors.success, width: '100%' };
+  };
+
+  const getCampusLabel = () => {
+    const campus = CAMPUSES.find((c) => c.value === selectedCampus);
+    return campus ? campus.label : '';
+  };
+
+  const getCanteenLabel = () => {
+    const canteens = CANTEENS_BY_CAMPUS[selectedCampus] || [];
+    const canteen = canteens.find((c) => c.value === selectedCanteen);
+    return canteen ? canteen.label : '';
+  };
+
+  const getStaffRoleLabel = () => {
+    const r = STAFF_ROLES.find((sr) => sr.value === staffRole);
+    return r ? r.label : 'Employee';
   };
 
   const handleSignUp = async () => {
@@ -59,16 +109,32 @@ export default function RegisterScreen() {
       Alert.alert('Error', 'Please agree to the Terms of Service.');
       return;
     }
+    if (isStaff && (!selectedCampus || !selectedCanteen)) {
+      Alert.alert('Error', 'Please select a campus and canteen.');
+      return;
+    }
 
     setLoading(true);
     try {
+      // Determine the actual role to save
+      const actualRole = isStaff ? staffRole : 'student';
+
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password: password.trim(),
         options: {
           data: {
             name: fullName.trim(),
-            role: role,
+            role: actualRole,
+            phone: phone.trim(),
+            ...(isStaff
+              ? {
+                  vendor_id: selectedCanteen,
+                  campus: selectedCampus,
+                }
+              : {
+                  college_id: studentId.trim(),
+                }),
           },
         },
       });
@@ -76,6 +142,26 @@ export default function RegisterScreen() {
       if (error) {
         Alert.alert('Sign Up Failed', error.message);
         return;
+      }
+
+      // If sign-up succeeded and we have a user, also update the profiles table directly
+      if (data?.user?.id) {
+        const profileUpdate = {
+          id: data.user.id,
+          name: fullName.trim(),
+          role: actualRole,
+          phone: phone.trim(),
+          ...(isStaff
+            ? {
+                vendor_id: selectedCanteen,
+                campus: selectedCampus,
+              }
+            : {
+                college_id: studentId.trim(),
+              }),
+        };
+
+        await supabase.from('profiles').upsert(profileUpdate);
       }
 
       Alert.alert(
@@ -140,13 +226,13 @@ export default function RegisterScreen() {
           <View className="flex-row bg-surface rounded-md p-1 mb-6">
             <TouchableOpacity
               className={`flex-1 py-3 rounded-md items-center ${
-                role === 'student' ? 'bg-primary' : ''
+                roleToggle === 'student' ? 'bg-primary' : ''
               }`}
-              onPress={() => setRole('student')}
+              onPress={() => setRoleToggle('student')}
             >
               <Text
                 className={`text-sm ${
-                  role === 'student' ? 'text-white' : 'text-text-secondary'
+                  roleToggle === 'student' ? 'text-white' : 'text-text-secondary'
                 }`}
                 style={{ fontFamily: 'Inter_600SemiBold' }}
               >
@@ -155,13 +241,13 @@ export default function RegisterScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               className={`flex-1 py-3 rounded-md items-center ${
-                role === 'employee' ? 'bg-primary' : ''
+                roleToggle === 'staff' ? 'bg-primary' : ''
               }`}
-              onPress={() => setRole('employee')}
+              onPress={() => setRoleToggle('staff')}
             >
               <Text
                 className={`text-sm ${
-                  role === 'employee' ? 'text-white' : 'text-text-secondary'
+                  roleToggle === 'staff' ? 'text-white' : 'text-text-secondary'
                 }`}
                 style={{ fontFamily: 'Inter_600SemiBold' }}
               >
@@ -219,34 +305,142 @@ export default function RegisterScreen() {
             />
           </View>
 
-          {/* College */}
-          <Text className="text-sm text-text-primary mb-2" style={{ fontFamily: 'Inter_500Medium' }}>
-            Select College
-          </Text>
-          <TouchableOpacity className="border border-border rounded-md px-4 py-3 mb-4 bg-surface flex-row items-center justify-between">
-            <Text
-              className={`text-base ${college ? 'text-text-primary' : 'text-text-tertiary'}`}
-              style={{ fontFamily: 'Inter_400Regular' }}
-            >
-              {college || 'Choose your campus'}
-            </Text>
-            <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
-          </TouchableOpacity>
-
-          {/* Student ID (only for students) */}
-          {role === 'student' && (
+          {/* ===================== STUDENT FIELDS ===================== */}
+          {!isStaff && (
             <>
+              {/* Student ID */}
               <Text className="text-sm text-text-primary mb-2" style={{ fontFamily: 'Inter_500Medium' }}>
                 Student ID
               </Text>
               <TextInput
                 className="border border-border rounded-md px-4 py-3 mb-4 text-base text-text-primary bg-surface"
                 style={{ fontFamily: 'Inter_400Regular' }}
-                placeholder="2024-MIT-001"
+                placeholder="2024-KJSCE-001"
                 placeholderTextColor={colors.textTertiary}
                 value={studentId}
                 onChangeText={setStudentId}
               />
+            </>
+          )}
+
+          {/* ===================== STAFF FIELDS ===================== */}
+          {isStaff && (
+            <>
+              {/* Campus Selector */}
+              <Text className="text-sm text-text-primary mb-2" style={{ fontFamily: 'Inter_500Medium' }}>
+                Select Campus
+              </Text>
+              <TouchableOpacity
+                className="border border-border rounded-md px-4 py-3 mb-1 bg-surface flex-row items-center justify-between"
+                onPress={() => setShowCampusPicker(!showCampusPicker)}
+              >
+                <Text
+                  className={`text-base ${selectedCampus ? 'text-text-primary' : 'text-text-tertiary'}`}
+                  style={{ fontFamily: 'Inter_400Regular' }}
+                >
+                  {getCampusLabel() || 'Choose your campus'}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
+              </TouchableOpacity>
+              {showCampusPicker && (
+                <View className="border border-border rounded-md mb-3 bg-white overflow-hidden">
+                  {CAMPUSES.map((campus) => (
+                    <TouchableOpacity
+                      key={campus.value}
+                      className={`px-4 py-3 border-b border-border-light ${
+                        selectedCampus === campus.value ? 'bg-primary-light' : ''
+                      }`}
+                      onPress={() => {
+                        setSelectedCampus(campus.value);
+                        setSelectedCanteen(''); // reset canteen on campus change
+                        setShowCampusPicker(false);
+                      }}
+                    >
+                      <Text className="text-sm text-text-primary" style={{ fontFamily: 'Inter_400Regular' }}>
+                        {campus.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              {!showCampusPicker && <View className="mb-3" />}
+
+              {/* Canteen Selector */}
+              {selectedCampus ? (
+                <>
+                  <Text className="text-sm text-text-primary mb-2" style={{ fontFamily: 'Inter_500Medium' }}>
+                    Select Canteen
+                  </Text>
+                  <TouchableOpacity
+                    className="border border-border rounded-md px-4 py-3 mb-1 bg-surface flex-row items-center justify-between"
+                    onPress={() => setShowCanteenPicker(!showCanteenPicker)}
+                  >
+                    <Text
+                      className={`text-base ${selectedCanteen ? 'text-text-primary' : 'text-text-tertiary'}`}
+                      style={{ fontFamily: 'Inter_400Regular' }}
+                    >
+                      {getCanteenLabel() || 'Choose your canteen'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                  {showCanteenPicker && (
+                    <View className="border border-border rounded-md mb-3 bg-white overflow-hidden">
+                      {(CANTEENS_BY_CAMPUS[selectedCampus] || []).map((canteen) => (
+                        <TouchableOpacity
+                          key={canteen.value}
+                          className={`px-4 py-3 border-b border-border-light ${
+                            selectedCanteen === canteen.value ? 'bg-primary-light' : ''
+                          }`}
+                          onPress={() => {
+                            setSelectedCanteen(canteen.value);
+                            setShowCanteenPicker(false);
+                          }}
+                        >
+                          <Text className="text-sm text-text-primary" style={{ fontFamily: 'Inter_400Regular' }}>
+                            {canteen.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                  {!showCanteenPicker && <View className="mb-3" />}
+                </>
+              ) : null}
+
+              {/* Staff Role Selector */}
+              <Text className="text-sm text-text-primary mb-2" style={{ fontFamily: 'Inter_500Medium' }}>
+                Staff Role
+              </Text>
+              <TouchableOpacity
+                className="border border-border rounded-md px-4 py-3 mb-1 bg-surface flex-row items-center justify-between"
+                onPress={() => setShowStaffRolePicker(!showStaffRolePicker)}
+              >
+                <Text className="text-base text-text-primary" style={{ fontFamily: 'Inter_400Regular' }}>
+                  {getStaffRoleLabel()}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
+              </TouchableOpacity>
+              {showStaffRolePicker && (
+                <View className="border border-border rounded-md mb-3 bg-white overflow-hidden">
+                  {STAFF_ROLES.map((sr) => (
+                    <TouchableOpacity
+                      key={sr.value}
+                      className={`px-4 py-3 border-b border-border-light ${
+                        staffRole === sr.value ? 'bg-primary-light' : ''
+                      }`}
+                      onPress={() => {
+                        setStaffRole(sr.value);
+                        setShowStaffRolePicker(false);
+                      }}
+                    >
+                      <Text className="text-sm text-text-primary" style={{ fontFamily: 'Inter_400Regular' }}>
+                        {sr.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              {!showStaffRolePicker && <View className="mb-3" />}
             </>
           )}
 
@@ -346,7 +540,7 @@ export default function RegisterScreen() {
               <ActivityIndicator color="#fff" />
             ) : (
               <Text className="text-white text-base" style={{ fontFamily: 'Inter_600SemiBold' }}>
-                Sign Up
+                Sign Up as {isStaff ? getStaffRoleLabel() : 'Student'}
               </Text>
             )}
           </TouchableOpacity>

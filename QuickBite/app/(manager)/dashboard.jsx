@@ -1,63 +1,138 @@
 /**
  * Manager Analytics Dashboard
- * Matches Figma: stall selector, date filters, revenue/orders stats,
- * trend charts, top sellers
+ * Filtered by the manager's assigned canteen (vendorId from Zustand).
+ * Shows real order stats from Supabase.
  */
-import { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { supabase, fetchVendorOrders, fetchMenuItems } from '../../lib/supabase';
+import useStore from '../../lib/store';
 import { colors } from '../../lib/theme';
 
 const DATE_FILTERS = ['Today', 'Yesterday', 'Last 7 Days', 'Last 30 Days'];
 
-const MOCK_TOP_SELLERS = [
-  { name: 'Masala Dosa', sold: 24, color: colors.primary },
-  { name: 'Paneer Roll', sold: 18, color: colors.primary },
-  { name: 'Filter Coffee', sold: 15, color: colors.primary },
-  { name: 'Vegetable Biryani', sold: 12, color: colors.primary },
-  { name: 'Mango Shake', sold: 8, color: colors.primary },
-];
-
 export default function ManagerDashboardScreen() {
   const router = useRouter();
-  const [selectedFilter, setSelectedFilter] = useState('Today');
-  const [showStallPicker, setShowStallPicker] = useState(false);
+  const profile = useStore((s) => s.profile);
+  const vendorId = useStore((s) => s.vendorId);
+  const vendorName = useStore((s) => s.vendorName);
+  const clearAuth = useStore((s) => s.clearAuth);
 
-  const maxSold = Math.max(...MOCK_TOP_SELLERS.map((i) => i.sold));
+  const [selectedFilter, setSelectedFilter] = useState('Today');
+  const [orders, setOrders] = useState([]);
+  const [topSellers, setTopSellers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (vendorId) {
+      loadDashboardData();
+    } else {
+      setLoading(false);
+    }
+  }, [vendorId]);
+
+  const loadDashboardData = async () => {
+    try {
+      // Fetch all orders for this vendor
+      const allOrders = await fetchVendorOrders(vendorId);
+      setOrders(allOrders);
+
+      // Calculate top sellers from order items
+      const itemCounts = {};
+      allOrders.forEach((order) => {
+        order.order_items?.forEach((oi) => {
+          const name = oi.menu_item?.name || 'Unknown';
+          itemCounts[name] = (itemCounts[name] || 0) + oi.quantity;
+        });
+      });
+
+      const sorted = Object.entries(itemCounts)
+        .map(([name, sold]) => ({ name, sold }))
+        .sort((a, b) => b.sold - a.sold)
+        .slice(0, 5);
+
+      setTopSellers(sorted);
+    } catch (err) {
+      console.error('Error loading dashboard:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Are you sure you want to log out?', [
+      { text: 'Cancel' },
+      {
+        text: 'Logout',
+        style: 'destructive',
+        onPress: async () => {
+          await supabase.auth.signOut();
+          clearAuth();
+          router.replace('/(auth)/login');
+        },
+      },
+    ]);
+  };
+
+  // Compute stats
+  const totalRevenue = orders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+  const totalOrders = orders.length;
+  const completedOrders = orders.filter((o) => o.status === 'picked_up').length;
+  const cancelledOrders = orders.filter((o) => o.status === 'cancelled').length;
+  const avgOrderValue = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
+  const maxSold = topSellers.length > 0 ? Math.max(...topSellers.map((i) => i.sold)) : 1;
+
+  // No canteen assigned
+  if (!vendorId && !loading) {
+    return (
+      <View className="flex-1 bg-white items-center justify-center px-8">
+        <Ionicons name="alert-circle-outline" size={64} color={colors.warning} />
+        <Text className="text-lg text-text-primary text-center mt-4" style={{ fontFamily: 'Inter_700Bold' }}>
+          No Canteen Assigned
+        </Text>
+        <Text className="text-sm text-text-secondary text-center mt-2" style={{ fontFamily: 'Inter_400Regular' }}>
+          Your account is not assigned to any canteen. Please contact the admin.
+        </Text>
+        <TouchableOpacity className="bg-primary rounded-md py-3 px-8 mt-6" onPress={handleLogout}>
+          <Text className="text-white text-sm" style={{ fontFamily: 'Inter_600SemiBold' }}>Logout</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (loading) {
+    return (
+      <View className="flex-1 bg-white items-center justify-center">
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View className="flex-1 bg-white">
       {/* Header */}
       <View className="flex-row items-center justify-between px-5 pt-14 pb-3">
-        <TouchableOpacity>
-          <Ionicons name="menu" size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
-        <Text className="text-lg text-text-primary" style={{ fontFamily: 'Inter_700Bold' }}>
-          Manager Dashboard
-        </Text>
-        <TouchableOpacity>
-          <Ionicons name="person-circle-outline" size={26} color={colors.primary} />
-        </TouchableOpacity>
+        <View className="flex-1">
+          <Text className="text-lg text-text-primary" style={{ fontFamily: 'Inter_700Bold' }} numberOfLines={1}>
+            {vendorName || 'Dashboard'}
+          </Text>
+          <Text className="text-xs text-text-tertiary" style={{ fontFamily: 'Inter_400Regular' }}>
+            Manager: {profile?.name || 'Staff'}
+          </Text>
+        </View>
+        <View className="flex-row items-center" style={{ gap: 12 }}>
+          <TouchableOpacity>
+            <Ionicons name="notifications-outline" size={22} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleLogout}>
+            <Ionicons name="log-out-outline" size={22} color={colors.error} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        {/* Stall Selector */}
-        <View className="px-5 mb-4">
-          <Text className="text-xs text-text-tertiary uppercase mb-2" style={{ fontFamily: 'Inter_600SemiBold' }}>
-            Select Stall
-          </Text>
-          <TouchableOpacity
-            className="flex-row items-center justify-between border border-border rounded-lg px-4 py-3"
-            onPress={() => setShowStallPicker(!showStallPicker)}
-          >
-            <Text className="text-base text-text-primary" style={{ fontFamily: 'Inter_500Medium' }}>
-              Main Canteen - Block A
-            </Text>
-            <Ionicons name="chevron-down" size={18} color={colors.textTertiary} />
-          </TouchableOpacity>
-        </View>
-
         {/* Date Filters */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} className="px-5 mb-5"
           contentContainerStyle={{ gap: 8 }}>
@@ -81,9 +156,8 @@ export default function ManagerDashboardScreen() {
           ))}
         </ScrollView>
 
-        {/* Stats Cards */}
+        {/* Stats Cards — real data */}
         <View className="flex-row px-5 mb-5" style={{ gap: 12 }}>
-          {/* Revenue */}
           <View className="flex-1 bg-primary-light rounded-xl p-4">
             <View className="flex-row items-center mb-2">
               <Ionicons name="cash-outline" size={16} color={colors.primary} />
@@ -92,14 +166,10 @@ export default function ManagerDashboardScreen() {
               </Text>
             </View>
             <Text className="text-xl text-text-primary" style={{ fontFamily: 'Inter_700Bold' }}>
-              ₹12,450
-            </Text>
-            <Text className="text-xs text-success mt-1" style={{ fontFamily: 'Inter_500Medium' }}>
-              ↑ +12.5%
+              ₹{totalRevenue.toLocaleString('en-IN')}
             </Text>
           </View>
 
-          {/* Total Orders */}
           <View className="flex-1 bg-info-light rounded-xl p-4">
             <View className="flex-row items-center mb-2">
               <Ionicons name="receipt-outline" size={16} color={colors.info} />
@@ -108,10 +178,7 @@ export default function ManagerDashboardScreen() {
               </Text>
             </View>
             <Text className="text-xl text-text-primary" style={{ fontFamily: 'Inter_700Bold' }}>
-              78
-            </Text>
-            <Text className="text-xs text-success mt-1" style={{ fontFamily: 'Inter_500Medium' }}>
-              ↑ +5.2%
+              {totalOrders}
             </Text>
           </View>
         </View>
@@ -119,10 +186,9 @@ export default function ManagerDashboardScreen() {
         {/* Secondary Stats */}
         <View className="flex-row px-5 mb-5" style={{ gap: 12 }}>
           {[
-            { label: 'Avg. Value', value: '₹160', change: '↑ +2.1%' },
-            { label: 'New Users', value: '14', change: '' },
-            { label: 'Cancelled', value: '3', change: '' },
-            { label: 'Avg. Time', value: '4.2 min', change: '' },
+            { label: 'Avg. Value', value: `₹${avgOrderValue}` },
+            { label: 'Completed', value: `${completedOrders}` },
+            { label: 'Cancelled', value: `${cancelledOrders}` },
           ].map((stat, idx) => (
             <View key={idx} className="flex-1 bg-surface rounded-lg p-2.5 items-center">
               <Text className="text-xs text-text-tertiary" style={{ fontFamily: 'Inter_500Medium' }}>
@@ -141,13 +207,7 @@ export default function ManagerDashboardScreen() {
             <Text className="text-sm text-text-primary" style={{ fontFamily: 'Inter_700Bold' }}>
               Revenue Trend (Last 7 Days)
             </Text>
-            <TouchableOpacity>
-              <Text className="text-xs text-primary" style={{ fontFamily: 'Inter_500Medium' }}>
-                Details →
-              </Text>
-            </TouchableOpacity>
           </View>
-          {/* Simple bar chart visualization */}
           <View className="flex-row items-end justify-between h-24" style={{ gap: 4 }}>
             {[40, 65, 55, 80, 70, 90, 75].map((height, idx) => (
               <View key={idx} className="flex-1 items-center">
@@ -163,66 +223,33 @@ export default function ManagerDashboardScreen() {
           </View>
         </View>
 
-        {/* Orders by Time Heatmap */}
-        <View className="mx-5 mb-5 bg-surface rounded-xl p-4">
-          <Text className="text-sm text-text-primary mb-3" style={{ fontFamily: 'Inter_700Bold' }}>
-            Orders by Time Heatmap
-          </Text>
-          <View className="flex-row mb-2" style={{ gap: 4 }}>
-            {['Breakfast', 'Lunch', 'Snacks', 'Dinner'].map((label) => (
-              <Text key={label} className="flex-1 text-xs text-text-tertiary text-center" style={{ fontFamily: 'Inter_400Regular' }}>
-                {label}
-              </Text>
-            ))}
-          </View>
-          {/* Heatmap grid */}
-          {[0, 1].map((row) => (
-            <View key={row} className="flex-row mb-1" style={{ gap: 4 }}>
-              {[0.3, 0.7, 0.5, 0.2, 0.8, 0.9, 0.4, 0.6].slice(row * 4, row * 4 + 4).map((opacity, idx) => (
-                <View
-                  key={idx}
-                  className="flex-1 h-12 rounded-md"
-                  style={{ backgroundColor: colors.primary, opacity }}
-                />
-              ))}
-            </View>
-          ))}
-          <View className="flex-row justify-between mt-2">
-            <Text className="text-xs text-text-tertiary" style={{ fontFamily: 'Inter_400Regular' }}>
-              Low Volume
-            </Text>
-            <View className="flex-row items-center" style={{ gap: 2 }}>
-              {[0.2, 0.4, 0.6, 0.8, 1.0].map((op, i) => (
-                <View key={i} className="w-4 h-3 rounded-sm" style={{ backgroundColor: colors.primary, opacity: op }} />
-              ))}
-            </View>
-            <Text className="text-xs text-text-tertiary" style={{ fontFamily: 'Inter_400Regular' }}>
-              High Volume
-            </Text>
-          </View>
-        </View>
-
-        {/* Top 5 Best Selling Items */}
+        {/* Top Best Selling Items — real from order data */}
         <View className="mx-5 mb-8 bg-surface rounded-xl p-4">
           <Text className="text-sm text-text-primary mb-4" style={{ fontFamily: 'Inter_700Bold' }}>
-            Top 5 Best Selling Items
+            Top Selling Items
           </Text>
-          {MOCK_TOP_SELLERS.map((item, idx) => (
-            <View key={idx} className="flex-row items-center mb-3">
-              <Text className="w-24 text-sm text-text-secondary" style={{ fontFamily: 'Inter_400Regular' }} numberOfLines={1}>
-                {item.name}
-              </Text>
-              <View className="flex-1 h-5 bg-white rounded-full overflow-hidden mx-3">
-                <View
-                  className="h-full rounded-full bg-primary"
-                  style={{ width: `${(item.sold / maxSold) * 100}%` }}
-                />
+          {topSellers.length === 0 ? (
+            <Text className="text-sm text-text-tertiary" style={{ fontFamily: 'Inter_400Regular' }}>
+              No order data yet
+            </Text>
+          ) : (
+            topSellers.map((item, idx) => (
+              <View key={idx} className="flex-row items-center mb-3">
+                <Text className="w-24 text-sm text-text-secondary" style={{ fontFamily: 'Inter_400Regular' }} numberOfLines={1}>
+                  {item.name}
+                </Text>
+                <View className="flex-1 h-5 bg-white rounded-full overflow-hidden mx-3">
+                  <View
+                    className="h-full rounded-full bg-primary"
+                    style={{ width: `${(item.sold / maxSold) * 100}%` }}
+                  />
+                </View>
+                <Text className="text-sm text-primary w-8 text-right" style={{ fontFamily: 'Inter_700Bold' }}>
+                  {item.sold}
+                </Text>
               </View>
-              <Text className="text-sm text-primary w-8 text-right" style={{ fontFamily: 'Inter_700Bold' }}>
-                {item.sold}
-              </Text>
-            </View>
-          ))}
+            ))
+          )}
         </View>
       </ScrollView>
     </View>

@@ -1,6 +1,7 @@
 /**
  * Root Layout — QuickBite
  * Handles font loading, auth state, and redirects based on user role.
+ * Fetches profile with vendor join so staff get their canteen assignment.
  */
 import '../global.css';
 import { useEffect } from 'react';
@@ -15,12 +16,29 @@ import {
   Inter_700Bold,
 } from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
-import { supabase, fetchProfile } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import useStore from '../lib/store';
 import { colors } from '../lib/theme';
 
 // Prevent splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync();
+
+/**
+ * Fetch profile with vendor name join (for staff canteen assignment)
+ */
+async function fetchProfileWithVendor(userId) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*, vendor:vendors(name)')
+    .eq('id', userId)
+    .single();
+
+  if (error) {
+    console.error('Error fetching profile:', error.message);
+    return null;
+  }
+  return data;
+}
 
 export default function RootLayout() {
   const router = useRouter();
@@ -48,7 +66,7 @@ export default function RootLayout() {
         setSession(session);
 
         if (session?.user) {
-          const userProfile = await fetchProfile(session.user.id);
+          const userProfile = await fetchProfileWithVendor(session.user.id);
           if (userProfile) {
             setProfile(userProfile);
           }
@@ -64,7 +82,7 @@ export default function RootLayout() {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
       if (session?.user) {
-        const userProfile = await fetchProfile(session.user.id);
+        const userProfile = await fetchProfileWithVendor(session.user.id);
         if (userProfile) {
           setProfile(userProfile);
         }

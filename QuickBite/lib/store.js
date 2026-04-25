@@ -9,6 +9,8 @@ import { create } from 'zustand';
  * @property {object|null} session - Supabase session
  * @property {object|null} profile - User profile from profiles table
  * @property {string|null} role - User role: student | employee | manager
+ * @property {string|null} vendorId - Assigned vendor/canteen UUID (staff only)
+ * @property {string|null} vendorName - Assigned vendor/canteen name (staff only)
  * @property {boolean} isLoading - Auth loading state
  */
 
@@ -40,12 +42,21 @@ const useStore = create((set, get) => ({
   session: null,
   profile: null,
   role: null,
+  vendorId: null,
+  vendorName: null,
   isAuthLoading: true,
 
   setSession: (session) => set({ session }),
-  setProfile: (profile) => set({ profile, role: profile?.role || null }),
+  setProfile: (profile) =>
+    set({
+      profile,
+      role: profile?.role || null,
+      vendorId: profile?.vendor_id || null,
+      vendorName: profile?.vendor?.name || profile?.vendorName || null,
+    }),
   setAuthLoading: (isAuthLoading) => set({ isAuthLoading }),
-  clearAuth: () => set({ session: null, profile: null, role: null }),
+  clearAuth: () =>
+    set({ session: null, profile: null, role: null, vendorId: null, vendorName: null }),
 
   // ========================================
   // CART SLICE

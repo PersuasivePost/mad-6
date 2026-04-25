@@ -1,6 +1,7 @@
 /**
  * Menu Management Screen
- * Matches Figma: search, category filters, menu items with edit/delete/availability toggle
+ * Filters items by the manager's assigned canteen (vendorId from Zustand).
+ * Dynamic categories from actual menu data.
  */
 import { useState, useEffect } from 'react';
 import {
@@ -16,45 +17,52 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { fetchVendors, fetchMenuItems, supabase } from '../../lib/supabase';
+import { fetchMenuItems, supabase } from '../../lib/supabase';
+import useStore from '../../lib/store';
 import { colors } from '../../lib/theme';
-
-const CATEGORIES = ['All', 'Breakfast', 'Lunch', 'Snacks'];
 
 export default function MenuManagementScreen() {
   const router = useRouter();
-  const [vendors, setVendors] = useState([]);
-  const [selectedVendor, setSelectedVendor] = useState(null);
+  const vendorId = useStore((s) => s.vendorId);
+  const vendorName = useStore((s) => s.vendorName);
+
   const [menuItems, setMenuItems] = useState([]);
+  const [categories, setCategories] = useState(['All']);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (vendorId) {
+      loadMenuItems();
+    } else {
+      setLoading(false);
+    }
+  }, [vendorId]);
 
-  const loadData = async () => {
-    const data = await fetchVendors();
-    setVendors(data);
-    if (data.length > 0) {
-      setSelectedVendor(data[0]);
-      const items = await fetchMenuItems(data[0].id);
-      setMenuItems(items);
+  const loadMenuItems = async () => {
+    // Fetch all items (including unavailable) for management
+    const { data, error } = await supabase
+      .from('menu_items')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .order('category', { ascending: true });
+
+    if (!error && data) {
+      setMenuItems(data);
+      // Extract dynamic categories
+      const uniqueCats = [...new Set(data.map((i) => i.category).filter(Boolean))];
+      setCategories(['All', ...uniqueCats]);
     }
     setLoading(false);
-  };
-
-  const loadMenuItems = async (vendorId) => {
-    const items = await fetchMenuItems(vendorId);
-    setMenuItems(items);
   };
 
   const toggleAvailability = async (itemId, currentValue) => {
     const { error } = await supabase
       .from('menu_items')
       .update({ is_available: !currentValue })
-      .eq('id', itemId);
+      .eq('id', itemId)
+      .eq('vendor_id', vendorId); // safety: only own canteen items
 
     if (!error) {
       setMenuItems((prev) =>
@@ -72,7 +80,11 @@ export default function MenuManagementScreen() {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
-          await supabase.from('menu_items').delete().eq('id', itemId);
+          await supabase
+            .from('menu_items')
+            .delete()
+            .eq('id', itemId)
+            .eq('vendor_id', vendorId); // safety: only own canteen items
           setMenuItems((prev) => prev.filter((item) => item.id !== itemId));
         },
       },
@@ -81,13 +93,26 @@ export default function MenuManagementScreen() {
 
   const filteredItems = menuItems.filter((item) => {
     const matchesCategory =
-      selectedCategory === 'All' ||
-      item.category?.toLowerCase() === selectedCategory.toLowerCase();
+      selectedCategory === 'All' || item.category === selectedCategory;
     const matchesSearch =
       !searchQuery ||
       item.name.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCategory && matchesSearch;
   });
+
+  if (!vendorId && !loading) {
+    return (
+      <View className="flex-1 bg-white items-center justify-center px-8">
+        <Ionicons name="alert-circle-outline" size={64} color={colors.warning} />
+        <Text className="text-lg text-text-primary text-center mt-4" style={{ fontFamily: 'Inter_700Bold' }}>
+          No Canteen Assigned
+        </Text>
+        <Text className="text-sm text-text-secondary text-center mt-2" style={{ fontFamily: 'Inter_400Regular' }}>
+          Your account is not assigned to any canteen. Contact admin.
+        </Text>
+      </View>
+    );
+  }
 
   if (loading) {
     return (
@@ -108,7 +133,7 @@ export default function MenuManagementScreen() {
         />
         <View className="flex-1 ml-3">
           <View className="flex-row items-center justify-between">
-            <Text className="text-base text-text-primary" style={{ fontFamily: 'Inter_600SemiBold' }}>
+            <Text className="text-base text-text-primary flex-1 mr-2" style={{ fontFamily: 'Inter_600SemiBold' }} numberOfLines={1}>
               {item.name}
             </Text>
             <Text className="text-base text-primary" style={{ fontFamily: 'Inter_700Bold' }}>
@@ -116,13 +141,13 @@ export default function MenuManagementScreen() {
             </Text>
           </View>
           <Text className="text-xs text-text-tertiary mt-0.5" style={{ fontFamily: 'Inter_400Regular' }}>
-            {item.category} • {item.food_type === 'veg' ? 'Veg' : 'Non-Veg'}
+            {item.category} • Veg{item.dietary_tags?.includes('jain-available') ? ' • Jain' : ''}
           </Text>
           <View className="flex-row items-center mt-1">
             <View
               className="flex-row items-center px-2 py-0.5 rounded-full"
               style={{
-                backgroundColor: item.is_available ? colors.successLight : colors.errorLight,
+                backgroundColor: item.is_available ? (colors.successLight || '#E8F5E9') : (colors.errorLight || '#FFEBEE'),
               }}
             >
               <View
@@ -163,7 +188,7 @@ export default function MenuManagementScreen() {
             AVAILABILITY
           </Text>
           <Switch
-            value={item.is_available}
+            value={item.is_available !== false}
             onValueChange={() => toggleAvailability(item.id, item.is_available)}
             trackColor={{ false: colors.border, true: colors.primary + '60' }}
             thumbColor={item.is_available ? colors.primary : colors.textTertiary}
@@ -177,13 +202,18 @@ export default function MenuManagementScreen() {
     <View className="flex-1 bg-surface-alt">
       {/* Header */}
       <View className="bg-white px-5 pt-14 pb-4 border-b border-border-light">
-        <View className="flex-row items-center justify-between mb-4">
+        <View className="flex-row items-center justify-between mb-2">
           <TouchableOpacity onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text className="text-lg text-text-primary" style={{ fontFamily: 'Inter_700Bold' }}>
-            Menu Management
-          </Text>
+          <View className="flex-1 items-center">
+            <Text className="text-lg text-text-primary" style={{ fontFamily: 'Inter_700Bold' }}>
+              Menu Management
+            </Text>
+            <Text className="text-xs text-text-tertiary" style={{ fontFamily: 'Inter_400Regular' }}>
+              {vendorName || 'Canteen'} • {menuItems.length} items
+            </Text>
+          </View>
           <TouchableOpacity>
             <Ionicons name="ellipsis-vertical" size={22} color={colors.textPrimary} />
           </TouchableOpacity>
@@ -202,12 +232,14 @@ export default function MenuManagementScreen() {
           />
         </View>
 
-        {/* Category Filters */}
-        <View className="flex-row" style={{ gap: 8 }}>
-          {CATEGORIES.map((cat) => (
+        {/* Category Filters — dynamic from DB */}
+        <FlatList
+          horizontal
+          data={categories}
+          keyExtractor={(item) => item}
+          renderItem={({ item: cat }) => (
             <TouchableOpacity
-              key={cat}
-              className={`px-4 py-2 rounded-full ${
+              className={`px-4 py-2 rounded-full mr-2 ${
                 selectedCategory === cat ? 'bg-primary' : 'bg-surface'
               }`}
               onPress={() => setSelectedCategory(cat)}
@@ -221,8 +253,9 @@ export default function MenuManagementScreen() {
                 {cat}
               </Text>
             </TouchableOpacity>
-          ))}
-        </View>
+          )}
+          showsHorizontalScrollIndicator={false}
+        />
       </View>
 
       {/* Menu Items List */}
