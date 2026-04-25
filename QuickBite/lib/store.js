@@ -47,13 +47,20 @@ const useStore = create((set, get) => ({
   isAuthLoading: true,
 
   setSession: (session) => set({ session }),
-  setProfile: (profile) =>
+  setProfile: (profile) => {
+    const role = profile?.role || null;
+    const isStaff = role === 'employee' || role === 'manager';
+    // Auto-assign KJSCE canteen for staff with no vendor_id
+    const DEFAULT_VENDOR_ID = 'aaaaaaaa-0000-0000-0000-000000000001';
+    const DEFAULT_VENDOR_NAME = 'KJSCE Engineering Canteen';
+
     set({
       profile,
-      role: profile?.role || null,
-      vendorId: profile?.vendor_id || null,
-      vendorName: profile?.vendor?.name || profile?.vendorName || null,
-    }),
+      role,
+      vendorId: profile?.vendor_id || (isStaff ? DEFAULT_VENDOR_ID : null),
+      vendorName: profile?.vendor?.name || (isStaff ? DEFAULT_VENDOR_NAME : null),
+    });
+  },
   setAuthLoading: (isAuthLoading) => set({ isAuthLoading }),
   clearAuth: () =>
     set({ session: null, profile: null, role: null, vendorId: null, vendorName: null }),
